@@ -18,6 +18,7 @@ import android.text.InputType
 import android.text.TextWatcher
 import android.view.Gravity
 import android.view.View
+import android.view.Window
 import android.widget.Button
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -27,6 +28,8 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import androidx.core.content.FileProvider
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -94,6 +97,9 @@ class MainActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Hilangkan ActionBar bawaan agar tidak menutupi tab pada Android 15/16
+        requestWindowFeature(Window.FEATURE_NO_TITLE)
+        actionBar?.hide()
 
         val now = Calendar.getInstance()
         jamKeluar = now.get(Calendar.HOUR_OF_DAY)
@@ -101,14 +107,27 @@ class MainActivity : Activity() {
 
         val mainContainer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.parseColor("#F0F4F8"))
+            setBackgroundColor(Color.parseColor("#102A43"))
         }
 
-        // --- TAB BAR (3 TAB) ---
+        // --- HEADER & TAB BAR (3 TAB) ---
+        val headerWrapper = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(Color.parseColor("#102A43"))
+            setPadding(24, 16, 24, 16)
+        }
+
+        val tvAppHeader = TextView(this).apply {
+            text = "Ds Calc"
+            textSize = 19f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.WHITE)
+            setPadding(4, 0, 0, 12)
+        }
+        headerWrapper.addView(tvAppHeader)
+
         val tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
-            setBackgroundColor(Color.parseColor("#102A43"))
-            setPadding(12, 14, 12, 14)
         }
 
         btnTabHitung = Button(this).apply {
@@ -144,9 +163,11 @@ class MainActivity : Activity() {
         tabBar.addView(btnTabHitung)
         tabBar.addView(btnTabRekapan)
         tabBar.addView(btnTabLaporan)
-        mainContainer.addView(tabBar)
+        headerWrapper.addView(tabBar)
+        mainContainer.addView(headerWrapper)
 
         val scrollView = ScrollView(this).apply {
+            setBackgroundColor(Color.parseColor("#F0F4F8"))
             layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
 
@@ -165,6 +186,13 @@ class MainActivity : Activity() {
         scrollView.addView(contentWrapper)
         mainContainer.addView(scrollView)
         setContentView(mainContainer)
+
+        // Penyesuaian jarak aman dari Status Bar & Navigation Bar pada Android 15 / 16 (Edge-to-Edge)
+        ViewCompat.setOnApplyWindowInsetsListener(mainContainer) { view, windowInsets ->
+            val insets = windowInsets.getInsets(WindowInsetsCompat.Type.systemBars())
+            view.setPadding(insets.left, insets.top, insets.right, insets.bottom)
+            WindowInsetsCompat.CONSUMED
+        }
 
         muatDraftRekapan()
         hitungRekapanCepat()
@@ -200,15 +228,6 @@ class MainActivity : Activity() {
     // =========================================================================
     private fun buildLayoutHitung() {
         layoutHitung = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-
-        val tvTitle = TextView(this).apply {
-            text = "Ds Calc — Hitung Satuan"
-            textSize = 20f
-            setTypeface(null, Typeface.BOLD)
-            setTextColor(Color.parseColor("#102A43"))
-            setPadding(0, 0, 0, 14)
-        }
-        layoutHitung.addView(tvTitle)
 
         val tvLabelKendaraan = TextView(this).apply {
             text = "1. Jenis Kendaraan / Karcis"
