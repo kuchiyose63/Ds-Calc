@@ -84,7 +84,7 @@ class MainActivity : Activity() {
     // UI Tab 3: Laporan Riwayat Satuan
     private lateinit var tvRingkasanLaporan: TextView
     private lateinit var etUangFisikLaporan: EditText
-    private lateinit var tvGrandTotalLaporan: TextView
+    private lateinit var tvSelisihLaporan: TextView
     private lateinit var containerRiwayat: LinearLayout
     private var totalRekapLaporanSaatIni = 0
 
@@ -155,7 +155,6 @@ class MainActivity : Activity() {
             setPadding(32, 28, 32, 36)
         }
 
-        // Bangun ketiga halaman
         buildLayoutHitung()
         buildLayoutRekapan()
         buildLayoutLaporan()
@@ -432,33 +431,28 @@ class MainActivity : Activity() {
         layoutRekapan.addView(tvTitle)
         layoutRekapan.addView(tvSub)
 
-        // Kartu Input Motor
         val cardMotor = buatKartuKategoriRekap("MOTOR")
         etMotor3k = tambahBarisInputTarif(cardMotor, "Tarif 3rb (Jam ke-1)")
         etMotor5k = tambahBarisInputTarif(cardMotor, "Tarif 5rb (> 1 Jam)")
         etMotor7k = tambahBarisInputTarif(cardMotor, "Tarif 7rb (Maksimal)")
         layoutRekapan.addView(cardMotor)
 
-        // Kartu Input Mobil
         val cardMobil = buatKartuKategoriRekap("MOBIL")
         etMobil5k = tambahBarisInputTarif(cardMobil, "Tarif 5rb (Jam ke-1)")
         etMobil8k = tambahBarisInputTarif(cardMobil, "Tarif 8rb (> 1 Jam)")
         etMobil10k = tambahBarisInputTarif(cardMobil, "Tarif 10rb (Maksimal)")
         layoutRekapan.addView(cardMobil)
 
-        // Kartu Input Truk
         val cardTruk = buatKartuKategoriRekap("TRUK")
         etTruk6k = tambahBarisInputTarif(cardTruk, "Tarif 6rb (Jam ke-1)")
         etTruk9k = tambahBarisInputTarif(cardTruk, "Tarif 9rb (> 1 Jam)")
         etTruk15k = tambahBarisInputTarif(cardTruk, "Tarif 15rb (Maksimal)")
         layoutRekapan.addView(cardTruk)
 
-        // Kartu Input Member
         val cardMember = buatKartuKategoriRekap("MEMBER (Tarif Rp 0)")
         etMember0k = tambahBarisInputTarif(cardMember, "Lembar Karcis Member")
         layoutRekapan.addView(cardMember)
 
-        // Kartu Input Uang Fisik
         val cardFisik = buatKartuKategoriRekap("UANG FISIK DI TANGAN")
         etFisikRekapan = EditText(this).apply {
             hint = "Masukkan total uang tunai fisik (misal: 250000)"
@@ -468,7 +462,6 @@ class MainActivity : Activity() {
         cardFisik.addView(etFisikRekapan)
         layoutRekapan.addView(cardFisik)
 
-        // Kartu Hasil Preview Rekap
         val cardPreview = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
@@ -488,7 +481,6 @@ class MainActivity : Activity() {
         cardPreview.addView(tvPreviewRekapan)
         layoutRekapan.addView(cardPreview)
 
-        // Tombol Kirim Gambar (JPG) & Kirim Teks
         val rowKirim = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             layoutParams = LinearLayout.LayoutParams(
@@ -545,7 +537,6 @@ class MainActivity : Activity() {
         }
         layoutRekapan.addView(btnResetRekapan)
 
-        // Pasang listener otomatis hitung saat angka berubah
         val semuaInput = listOf(
             etMotor3k, etMotor5k, etMotor7k,
             etMobil5k, etMobil8k, etMobil10k,
@@ -614,6 +605,18 @@ class MainActivity : Activity() {
         return et.text.toString().trim().toIntOrNull() ?: 0
     }
 
+    private fun formatStatusSetoran(uangFisik: Int, totalRekap: Int): String {
+        val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
+        val selisih = uangFisik - totalRekap
+        return when {
+            uangFisik == 0 && totalRekap == 0 -> "Rp 0"
+            uangFisik == 0 -> "-Rp ${nf.format(totalRekap)} (Uang fisik belum diisi)"
+            selisih == 0 -> "PAS (Rp 0)"
+            selisih > 0 -> "PLUS +Rp ${nf.format(selisih)}"
+            else -> "MINUS -Rp ${nf.format(-selisih)}"
+        }
+    }
+
     private fun hitungRekapanCepat(): String {
         val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
 
@@ -634,7 +637,6 @@ class MainActivity : Activity() {
         val totalLembarSemua = totLbrMotor + totLbrMobil + totLbrTruk + mem0
         val totalRekapRp = totRpMotor + totRpMobil + totRpTruk
         val uangFisik = bacaInt(etFisikRekapan)
-        val grandTotalSelisih = uangFisik - totalRekapRp
 
         val sb = StringBuilder()
         val tglCetak = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
@@ -675,18 +677,13 @@ class MainActivity : Activity() {
             sb.append("(Belum ada jumlah lembar diisi)\n\n")
         }
 
-        val statusSelisih = when {
-            uangFisik == 0 -> "(Belum diisi)"
-            grandTotalSelisih == 0 -> "(PAS)"
-            grandTotalSelisih > 0 -> "(LEBIH +Rp ${nf.format(grandTotalSelisih)})"
-            else -> "(KURANG -Rp ${nf.format(-grandTotalSelisih)})"
-        }
+        val infoSelisih = formatStatusSetoran(uangFisik, totalRekapRp)
 
         sb.append("================================\n")
         sb.append("Total Karcis     = $totalLembarSemua Lembar\n")
-        sb.append("Total            = Rp ${nf.format(totalRekapRp)}\n")
+        sb.append("Total Rekap      = Rp ${nf.format(totalRekapRp)}\n")
         sb.append("Total Uang Fisik = Rp ${nf.format(uangFisik)}\n")
-        sb.append("Grand Total      = Rp ${nf.format(grandTotalSelisih)} $statusSelisih")
+        sb.append("Selisih Setoran  = $infoSelisih")
 
         val hasil = sb.toString()
         tvPreviewRekapan.text = hasil
@@ -811,14 +808,14 @@ class MainActivity : Activity() {
         }
         cardRingkasan.addView(etUangFisikLaporan)
 
-        tvGrandTotalLaporan = TextView(this).apply {
-            text = "Grand Total (Selisih): Rp 0"
+        tvSelisihLaporan = TextView(this).apply {
+            text = "Selisih Setoran: Rp 0"
             textSize = 16f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#1B7F5C"))
             setPadding(0, 8, 0, 0)
         }
-        cardRingkasan.addView(tvGrandTotalLaporan)
+        cardRingkasan.addView(tvSelisihLaporan)
         layoutLaporan.addView(cardRingkasan)
 
         val rowKirim = LinearLayout(this).apply {
@@ -889,7 +886,7 @@ class MainActivity : Activity() {
         containerRiwayat = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         layoutLaporan.addView(containerRiwayat)
 
-        etUangFisikLaporan.addTextChangedListener(buatTextWatcher { updateGrandTotalLaporan() })
+        etUangFisikLaporan.addTextChangedListener(buatTextWatcher { updateSelisihLaporan() })
     }
 
     // =========================================================================
@@ -1074,44 +1071,38 @@ class MainActivity : Activity() {
         }
 
         val uangFisik = bacaInt(etUangFisikLaporan)
-        val selisih = uangFisik - grandRekap
-        val statusSelisih = when {
-            uangFisik == 0 -> "(Belum diisi)"
-            selisih == 0 -> "(PAS)"
-            selisih > 0 -> "(LEBIH +Rp ${nf.format(selisih)})"
-            else -> "(KURANG -Rp ${nf.format(-selisih)})"
-        }
+        val infoSelisih = formatStatusSetoran(uangFisik, grandRekap)
 
         sb.append("================================\n")
         sb.append("Total Karcis     = $totalLembarSemua Lembar\n")
-        sb.append("Total            = Rp ${nf.format(grandRekap)}\n")
+        sb.append("Total Rekap      = Rp ${nf.format(grandRekap)}\n")
         sb.append("Total Uang Fisik = Rp ${nf.format(uangFisik)}\n")
-        sb.append("Grand Total      = Rp ${nf.format(selisih)} $statusSelisih")
+        sb.append("Selisih Setoran  = $infoSelisih")
 
         return sb.toString()
     }
 
-    private fun updateGrandTotalLaporan() {
+    private fun updateSelisihLaporan() {
         val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
         val uangFisik = bacaInt(etUangFisikLaporan)
         val selisih = uangFisik - totalRekapLaporanSaatIni
 
         when {
             uangFisik == 0 -> {
-                tvGrandTotalLaporan.text = "Grand Total (Selisih): Rp 0"
-                tvGrandTotalLaporan.setTextColor(Color.parseColor("#627D98"))
+                tvSelisihLaporan.text = "Selisih Setoran: Rp 0"
+                tvSelisihLaporan.setTextColor(Color.parseColor("#627D98"))
             }
             selisih == 0 -> {
-                tvGrandTotalLaporan.text = "Grand Total: Rp 0 (PAS)"
-                tvGrandTotalLaporan.setTextColor(Color.parseColor("#1B7F5C"))
+                tvSelisihLaporan.text = "Selisih Setoran: PAS (Rp 0)"
+                tvSelisihLaporan.setTextColor(Color.parseColor("#1B7F5C"))
             }
             selisih > 0 -> {
-                tvGrandTotalLaporan.text = "Grand Total: +Rp ${nf.format(selisih)} (LEBIH)"
-                tvGrandTotalLaporan.setTextColor(Color.parseColor("#2B6CB0"))
+                tvSelisihLaporan.text = "Selisih Setoran: PLUS +Rp ${nf.format(selisih)}"
+                tvSelisihLaporan.setTextColor(Color.parseColor("#2B6CB0"))
             }
             else -> {
-                tvGrandTotalLaporan.text = "Grand Total: -Rp ${nf.format(-selisih)} (KURANG)"
-                tvGrandTotalLaporan.setTextColor(Color.parseColor("#C53030"))
+                tvSelisihLaporan.text = "Selisih Setoran: MINUS -Rp ${nf.format(-selisih)}"
+                tvSelisihLaporan.setTextColor(Color.parseColor("#C53030"))
             }
         }
         tvRingkasanLaporan.text = susunTeksRekapLaporan()
@@ -1127,12 +1118,12 @@ class MainActivity : Activity() {
         if (jsonArray.length() == 0) {
             totalRekapLaporanSaatIni = 0
             tvRingkasanLaporan.text = "Belum ada karcis satuan tersimpan.\nGunakan tab HITUNG untuk menyimpan karcis satu per satu."
-            updateGrandTotalLaporan()
+            updateSelisihLaporan()
             return
         }
 
         tvRingkasanLaporan.text = susunTeksRekapLaporan()
-        updateGrandTotalLaporan()
+        updateSelisihLaporan()
 
         for (i in jsonArray.length() - 1 downTo 0) {
             val obj = jsonArray.getJSONObject(i)
@@ -1247,7 +1238,7 @@ class MainActivity : Activity() {
 
         val padding = 60
         val lineHeight = 48
-        val width = 1120
+        val width = 1220
         val height = (barisList.size * lineHeight) + (padding * 2) + 40
 
         val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
@@ -1265,13 +1256,22 @@ class MainActivity : Activity() {
         for ((index, baris) in barisList.withIndex()) {
             if (index == 0 ||
                 baris.startsWith("Total") ||
-                baris.startsWith("Grand Total") ||
+                baris.startsWith("Selisih Setoran") ||
                 baris.contains("Total ")
             ) {
                 paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
             } else {
                 paint.typeface = Typeface.MONOSPACE
             }
+
+            if (baris.contains("MINUS")) {
+                paint.color = Color.parseColor("#C53030")
+            } else if (baris.contains("PLUS") || baris.contains("PAS")) {
+                paint.color = Color.parseColor("#1B7F5C")
+            } else {
+                paint.color = Color.parseColor("#102A43")
+            }
+
             canvas.drawText(baris, padding.toFloat(), yPos, paint)
             yPos += lineHeight
         }
