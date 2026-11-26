@@ -7,7 +7,10 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Typeface
 import android.os.Bundle
 import android.text.Editable
@@ -23,8 +26,11 @@ import android.widget.RadioGroup
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
+import java.io.FileOutputStream
 import java.text.NumberFormat
 import java.text.SimpleDateFormat
 import java.util.Calendar
@@ -57,7 +63,12 @@ class MainActivity : Activity() {
     private lateinit var rgKendaraan: RadioGroup
 
     private lateinit var tvRingkasanLaporan: TextView
+    private lateinit var etUangFisik: EditText
+    private lateinit var tvGrandTotal: TextView
     private lateinit var containerRiwayat: LinearLayout
+
+    private var totalRekapSaatIni = 0
+    private var teksRekapUntukGambar = ""
 
     private val PREF_NAME = "ds_calc_laporan_pref"
     private val KEY_DATA = "riwayat_parkir_json"
@@ -74,7 +85,7 @@ class MainActivity : Activity() {
             setBackgroundColor(Color.parseColor("#F0F4F8"))
         }
 
-        // --- BARIS TAB NAVIGASI ATAS ---
+        // --- TAB BAR ---
         val tabBar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             setBackgroundColor(Color.parseColor("#102A43"))
@@ -106,11 +117,7 @@ class MainActivity : Activity() {
         mainContainer.addView(tabBar)
 
         val scrollView = ScrollView(this).apply {
-            layoutParams = LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                0,
-                1f
-            )
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f)
         }
 
         val contentWrapper = LinearLayout(this).apply {
@@ -134,9 +141,8 @@ class MainActivity : Activity() {
         }
         layoutKalkulator.addView(tvTitle)
 
-        // 1. Jenis Kendaraan
         val tvLabelKendaraan = TextView(this).apply {
-            text = "1. Jenis Kendaraan"
+            text = "1. Jenis Kendaraan / Karcis"
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#243B53"))
@@ -145,21 +151,26 @@ class MainActivity : Activity() {
         layoutKalkulator.addView(tvLabelKendaraan)
 
         rgKendaraan = RadioGroup(this).apply {
-            orientation = RadioGroup.HORIZONTAL
+            orientation = RadioGroup.VERTICAL
             setBackgroundColor(Color.WHITE)
-            setPadding(20, 14, 20, 14)
+            setPadding(20, 12, 20, 12)
         }
 
-        val rbMotor = RadioButton(this).apply { id = 1; text = "Motor   "; textSize = 16f; isChecked = true }
-        val rbMobil = RadioButton(this).apply { id = 2; text = "Mobil   "; textSize = 16f }
-        val rbTruk = RadioButton(this).apply { id = 3; text = "Truk"; textSize = 16f }
+        val rowRadio1 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val rbMotor = RadioButton(this).apply { id = 1; text = "Motor      "; textSize = 15f; isChecked = true }
+        val rbMobil = RadioButton(this).apply { id = 2; text = "Mobil"; textSize = 15f }
 
+        val rowRadio2 = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
+        val rbTruk = RadioButton(this).apply { id = 3; text = "Truk        "; textSize = 15f }
+        val rbMember = RadioButton(this).apply { id = 4; text = "Member (Rp 0)"; textSize = 15f }
+
+        // RadioGroup langsung menampung semua RadioButton
         rgKendaraan.addView(rbMotor)
         rgKendaraan.addView(rbMobil)
         rgKendaraan.addView(rbTruk)
+        rgKendaraan.addView(rbMember)
         layoutKalkulator.addView(rgKendaraan)
 
-        // 2. Jam Masuk & Keluar
         val tvLabelMasuk = TextView(this).apply {
             text = "2. Jam Masuk & Jam Keluar"
             textSize = 15f
@@ -233,9 +244,7 @@ class MainActivity : Activity() {
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 20, 0, 16)
-            }
+            ).apply { setMargins(0, 20, 0, 16) }
             layoutParams = params
         }
 
@@ -266,7 +275,7 @@ class MainActivity : Activity() {
         cardHasil.addView(tvKeteranganTarif)
         layoutKalkulator.addView(cardHasil)
 
-        // Catatan Plat Nomor + Tombol Simpan ke Laporan
+        // Simpan ke Laporan
         val cardSimpan = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
@@ -274,19 +283,17 @@ class MainActivity : Activity() {
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 16)
-            }
+            ).apply { setMargins(0, 0, 0, 16) }
             layoutParams = params
         }
 
         etPlatNomor = EditText(this).apply {
-            hint = "Plat Nomor / Catatan (Opsional, misal: B 1234 XYZ)"
+            hint = "Plat Nomor / Catatan (Opsional)"
             textSize = 14f
         }
 
         val btnSimpanLaporan = Button(this).apply {
-            text = "+ SIMPAN KE LAPORAN"
+            text = "+ SIMPAN KARCIS KE LAPORAN"
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setBackgroundColor(Color.parseColor("#1B7F5C"))
@@ -294,9 +301,7 @@ class MainActivity : Activity() {
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 12, 0, 0)
-            }
+            ).apply { setMargins(0, 12, 0, 0) }
             layoutParams = params
             setOnClickListener { simpanTransaksiKeLaporan() }
         }
@@ -305,7 +310,7 @@ class MainActivity : Activity() {
         cardSimpan.addView(btnSimpanLaporan)
         layoutKalkulator.addView(cardSimpan)
 
-        // Kalkulator Kembalian Tunai
+        // Kembalian Tunai
         val cardKembalian = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
@@ -340,7 +345,7 @@ class MainActivity : Activity() {
         layoutKalkulator.addView(cardKembalian)
 
         // ==========================================
-        // HALAMAN 2: LAPORAN TRANSAKSI
+        // HALAMAN 2: LAPORAN REKAPITULASI
         // ==========================================
         layoutLaporan = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -348,7 +353,7 @@ class MainActivity : Activity() {
         }
 
         val tvJudulLaporan = TextView(this).apply {
-            text = "Laporan Pendapatan Parkir"
+            text = "Rekap Laporan Setoran"
             textSize = 20f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#102A43"))
@@ -356,7 +361,7 @@ class MainActivity : Activity() {
         }
         layoutLaporan.addView(tvJudulLaporan)
 
-        // Kartu Ringkasan Total
+        // Kartu Rekap Dikelompokkan
         val cardRingkasan = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(Color.WHITE)
@@ -364,62 +369,107 @@ class MainActivity : Activity() {
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 16)
-            }
+            ).apply { setMargins(0, 0, 0, 16) }
             layoutParams = params
         }
 
         tvRingkasanLaporan = TextView(this).apply {
             text = "Memuat laporan..."
-            textSize = 15f
+            textSize = 14f
+            typeface = Typeface.MONOSPACE
             setTextColor(Color.parseColor("#102A43"))
         }
         cardRingkasan.addView(tvRingkasanLaporan)
+
+        // Input Uang Fisik & Grand Total Selisih
+        val divider = View(this).apply {
+            setBackgroundColor(Color.parseColor("#D9E2EC"))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, 2).apply {
+                setMargins(0, 20, 0, 16)
+            }
+        }
+        cardRingkasan.addView(divider)
+
+        val tvLabelFisik = TextView(this).apply {
+            text = "Input Total Uang Fisik (Tunai di Tangan):"
+            textSize = 14f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#243B53"))
+        }
+        cardRingkasan.addView(tvLabelFisik)
+
+        etUangFisik = EditText(this).apply {
+            hint = "Masukkan total uang fisik (misal: 150000)"
+            inputType = InputType.TYPE_CLASS_NUMBER
+            textSize = 16f
+        }
+        cardRingkasan.addView(etUangFisik)
+
+        tvGrandTotal = TextView(this).apply {
+            text = "Grand Total (Selisih): Rp 0"
+            textSize = 17f
+            setTypeface(null, Typeface.BOLD)
+            setTextColor(Color.parseColor("#1B7F5C"))
+            setPadding(0, 10, 0, 0)
+        }
+        cardRingkasan.addView(tvGrandTotal)
         layoutLaporan.addView(cardRingkasan)
 
-        // Tombol Aksi Laporan (Bagikan WA & Hapus Semua)
-        val rowAksiLaporan = LinearLayout(this).apply {
+        // Tombol Kirim Gambar JPG & Kirim Teks
+        val rowKirim = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             val params = LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 LinearLayout.LayoutParams.WRAP_CONTENT
-            ).apply {
-                setMargins(0, 0, 0, 20)
-            }
+            ).apply { setMargins(0, 0, 0, 10) }
             layoutParams = params
         }
 
-        val btnBagikanLaporan = Button(this).apply {
-            text = "Kirim / Salin Laporan"
+        val btnKirimGambar = Button(this).apply {
+            text = "Kirim Gambar (JPG)"
+            textSize = 13f
+            setTypeface(null, Typeface.BOLD)
+            setBackgroundColor(Color.parseColor("#1B7F5C"))
+            setTextColor(Color.WHITE)
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
+                setMargins(0, 0, 8, 0)
+            }
+            setOnClickListener { kirimLaporanGambarJpg() }
+        }
+
+        val btnKirimTeks = Button(this).apply {
+            text = "Salin / Kirim Teks"
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setBackgroundColor(Color.parseColor("#2B6CB0"))
             setTextColor(Color.WHITE)
             layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins(0, 0, 8, 0)
+                setMargins(8, 0, 0, 0)
             }
-            setOnClickListener { bagikanAtauSalinLaporan() }
+            setOnClickListener { bagikanAtauSalinTeks() }
         }
 
+        rowKirim.addView(btnKirimGambar)
+        rowKirim.addView(btnKirimTeks)
+        layoutLaporan.addView(rowKirim)
+
         val btnResetLaporan = Button(this).apply {
-            text = "Hapus Semua"
+            text = "Hapus Semua Data Laporan"
             textSize = 13f
             setTypeface(null, Typeface.BOLD)
             setBackgroundColor(Color.parseColor("#C53030"))
             setTextColor(Color.WHITE)
-            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f).apply {
-                setMargins(8, 0, 0, 0)
-            }
+            val params = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { setMargins(0, 0, 0, 20) }
+            layoutParams = params
             setOnClickListener { konfirmasiHapusSemua() }
         }
-
-        rowAksiLaporan.addView(btnBagikanLaporan)
-        rowAksiLaporan.addView(btnResetLaporan)
-        layoutLaporan.addView(rowAksiLaporan)
+        layoutLaporan.addView(btnResetLaporan)
 
         val tvHeaderRiwayat = TextView(this).apply {
-            text = "Rincian Transaksi Tersimpan:"
+            text = "Rincian Lembar Karcis Tersimpan:"
             textSize = 15f
             setTypeface(null, Typeface.BOLD)
             setTextColor(Color.parseColor("#243B53"))
@@ -444,6 +494,14 @@ class MainActivity : Activity() {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
                 hitungKembalian()
+            }
+            override fun afterTextChanged(s: Editable?) {}
+        })
+
+        etUangFisik.addTextChangedListener(object : TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                updateGrandTotal()
             }
             override fun afterTextChanged(s: Editable?) {}
         })
@@ -490,8 +548,20 @@ class MainActivity : Activity() {
 
         val durasiJam = selisihMenit / 60
         val sisaMenit = selisihMenit % 60
+        durasiTeksSaatIni = "$durasiJam jam $sisaMenit menit"
 
-        val (namaKendaraan, tarifJamPertama, tarifLebih1Jam, tarifMaksimal) = when (rgKendaraan.checkedRadioButtonId) {
+        val terpilih = rgKendaraan.checkedRadioButtonId
+        if (terpilih == 4) {
+            kendaraanSaatIni = "Member"
+            totalBiayaSaatIni = 0
+            tvHasilDurasi.text = "Durasi: $durasiTeksSaatIni"
+            tvHasilBiaya.text = "Rp 0"
+            tvKeteranganTarif.text = "Member • Tarif Rp 0 (Bebas Biaya)"
+            hitungKembalian()
+            return
+        }
+
+        val (namaKendaraan, tarifJamPertama, tarifLebih1Jam, tarifMaksimal) = when (terpilih) {
             1 -> TarifParkir("Motor", 3000, 5000, 7000)
             2 -> TarifParkir("Mobil", 5000, 8000, 10000)
             else -> TarifParkir("Truk", 6000, 9000, 15000)
@@ -505,7 +575,6 @@ class MainActivity : Activity() {
 
         kendaraanSaatIni = namaKendaraan
         totalBiayaSaatIni = biayaAkhir
-        durasiTeksSaatIni = "$durasiJam jam $sisaMenit menit"
 
         val rupiahFormat = NumberFormat.getNumberInstance(Locale("in", "ID"))
         tvHasilDurasi.text = "Durasi: $durasiTeksSaatIni"
@@ -538,18 +607,15 @@ class MainActivity : Activity() {
 
     private fun simpanTransaksiKeLaporan() {
         val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
-        val jsonStr = prefs.getString(KEY_DATA, "[]")
-        val jsonArray = JSONArray(jsonStr)
+        val jsonArray = JSONArray(prefs.getString(KEY_DATA, "[]"))
 
         val tanggalFormat = SimpleDateFormat("dd/MM/yyyy", Locale.getDefault())
-        val waktuSimpanFormat = SimpleDateFormat("HH:mm", Locale.getDefault())
         val sekarang = Date()
 
         val plat = etPlatNomor.text.toString().trim().uppercase(Locale.getDefault())
         val item = JSONObject().apply {
             put("id", System.currentTimeMillis())
             put("tanggal", tanggalFormat.format(sekarang))
-            put("waktu_catat", waktuSimpanFormat.format(sekarang))
             put("kendaraan", kendaraanSaatIni)
             put("jam_masuk", formatWaktu(jamMasuk, menitMasuk))
             put("jam_keluar", formatWaktu(jamKeluar, menitKeluar))
@@ -567,32 +633,139 @@ class MainActivity : Activity() {
         val rupiahFormat = NumberFormat.getNumberInstance(Locale("in", "ID"))
         Toast.makeText(
             this,
-            "Tersimpan: $kendaraanSaatIni Rp ${rupiahFormat.format(totalBiayaSaatIni)}",
+            "Tersimpan: $kendaraanSaatIni (Rp ${rupiahFormat.format(totalBiayaSaatIni)})",
             Toast.LENGTH_SHORT
         ).show()
+    }
+
+    private fun formatSingkatRibuan(nominal: Int): String {
+        return if (nominal >= 1000 && nominal % 1000 == 0) {
+            "${nominal / 1000}rb"
+        } else {
+            val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
+            "Rp ${nf.format(nominal)}"
+        }
+    }
+
+    private fun susunTeksRekap(): String {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val jsonArray = JSONArray(prefs.getString(KEY_DATA, "[]"))
+        val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
+
+        // Kelompokkan per jenis kendaraan -> map tarif -> jumlah lembar
+        val kategoriUrutan = listOf("Motor", "Mobil", "Truk", "Member")
+        val dataKelompok = mutableMapOf<String, MutableMap<Int, Int>>()
+        for (kat in kategoriUrutan) {
+            dataKelompok[kat] = sortedMapOf()
+        }
+
+        var grandRekap = 0
+        var totalLembarSemua = 0
+
+        for (i in 0 until jsonArray.length()) {
+            val obj = jsonArray.getJSONObject(i)
+            val kendaraan = obj.getString("kendaraan")
+            val biaya = obj.getInt("biaya")
+
+            grandRekap += biaya
+            totalLembarSemua++
+
+            val mapTarif = dataKelompok.getOrPut(kendaraan) { sortedMapOf() }
+            mapTarif[biaya] = (mapTarif[biaya] ?: 0) + 1
+        }
+
+        totalRekapSaatIni = grandRekap
+
+        val sb = StringBuilder()
+        val tglCetak = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
+        sb.append("REKAP LAPORAN PARKIR - DS CALC\n")
+        sb.append("Waktu: $tglCetak\n")
+        sb.append("================================\n\n")
+
+        for (kat in kategoriUrutan) {
+            val mapTarif = dataKelompok[kat] ?: continue
+            val totalLembarKat = mapTarif.values.sum()
+            if (totalLembarKat == 0) continue
+
+            sb.append("$kat Total $totalLembarKat Lembar karcis\n")
+            if (kat == "Member") {
+                sb.append("  Tarif 0 karena member\n\n")
+            } else {
+                var subTotalKat = 0
+                for ((tarif, lembar) in mapTarif) {
+                    val hasilKali = tarif * lembar
+                    subTotalKat += hasilKali
+                    val labelTarif = "${tarif / 1000}k"
+                    sb.append("  Tarif $labelTarif = ${lembar}L = ${formatSingkatRibuan(hasilKali)}\n")
+                }
+                sb.append("  Subtotal $kat = Rp ${nf.format(subTotalKat)}\n\n")
+            }
+        }
+
+        val uangFisik = etUangFisik.text.toString().trim().toIntOrNull() ?: 0
+        val selisih = uangFisik - grandRekap
+        val statusSelisih = when {
+            uangFisik == 0 -> "(Belum diisi)"
+            selisih == 0 -> "(PAS)"
+            selisih > 0 -> "(LEBIH +Rp ${nf.format(selisih)})"
+            else -> "(KURANG -Rp ${nf.format(-selisih)})"
+        }
+
+        sb.append("================================\n")
+        sb.append("Total Karcis : $totalLembarSemua Lembar\n")
+        sb.append("Total Rekap  : Rp ${nf.format(grandRekap)}\n")
+        sb.append("Uang Fisik   : Rp ${nf.format(uangFisik)}\n")
+        sb.append("Grand Total  : Rp ${nf.format(selisih)} $statusSelisih")
+
+        teksRekapUntukGambar = sb.toString()
+        return teksRekapUntukGambar
+    }
+
+    private fun updateGrandTotal() {
+        val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
+        val uangFisik = etUangFisik.text.toString().trim().toIntOrNull() ?: 0
+        val selisih = uangFisik - totalRekapSaatIni
+
+        when {
+            uangFisik == 0 -> {
+                tvGrandTotal.text = "Grand Total (Selisih): Rp 0"
+                tvGrandTotal.setTextColor(Color.parseColor("#627D98"))
+            }
+            selisih == 0 -> {
+                tvGrandTotal.text = "Grand Total: Rp 0 (PAS)"
+                tvGrandTotal.setTextColor(Color.parseColor("#1B7F5C"))
+            }
+            selisih > 0 -> {
+                tvGrandTotal.text = "Grand Total: +Rp ${nf.format(selisih)} (LEBIH)"
+                tvGrandTotal.setTextColor(Color.parseColor("#2B6CB0"))
+            }
+            else -> {
+                tvGrandTotal.text = "Grand Total: -Rp ${nf.format(-selisih)} (KURANG)"
+                tvGrandTotal.setTextColor(Color.parseColor("#C53030"))
+            }
+        }
+
+        // Perbarui teks rekap
+        tvRingkasanLaporan.text = susunTeksRekap()
     }
 
     private fun muatDataLaporan() {
         val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray(prefs.getString(KEY_DATA, "[]"))
-        val rupiahFormat = NumberFormat.getNumberInstance(Locale("in", "ID"))
-
-        var totalSemua = 0
-        var countMotor = 0
-        var totalMotor = 0
-        var countMobil = 0
-        var totalMobil = 0
-        var countTruk = 0
-        var totalTruk = 0
+        val nf = NumberFormat.getNumberInstance(Locale("in", "ID"))
 
         containerRiwayat.removeAllViews()
 
         if (jsonArray.length() == 0) {
-            tvRingkasanLaporan.text = "Belum ada transaksi tersimpan.\nGunakan tombol '+ SIMPAN KE LAPORAN' di tab Kalkulator."
+            totalRekapSaatIni = 0
+            tvRingkasanLaporan.text = "Belum ada lembar karcis tersimpan.\nGunakan tombol '+ SIMPAN KARCIS KE LAPORAN' di tab Kalkulator."
+            updateGrandTotal()
             return
         }
 
-        // Loop dari yang paling baru di atas
+        tvRingkasanLaporan.text = susunTeksRekap()
+        updateGrandTotal()
+
         for (i in jsonArray.length() - 1 downTo 0) {
             val obj = jsonArray.getJSONObject(i)
             val idItem = obj.getLong("id")
@@ -604,14 +777,6 @@ class MainActivity : Activity() {
             val biaya = obj.getInt("biaya")
             val plat = obj.optString("plat", "")
 
-            totalSemua += biaya
-            when (kendaraan) {
-                "Motor" -> { countMotor++; totalMotor += biaya }
-                "Mobil" -> { countMobil++; totalMobil += biaya }
-                "Truk" -> { countTruk++; totalTruk += biaya }
-            }
-
-            // Kartu Item Transaksi
             val itemCard = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -620,9 +785,7 @@ class MainActivity : Activity() {
                 val params = LinearLayout.LayoutParams(
                     LinearLayout.LayoutParams.MATCH_PARENT,
                     LinearLayout.LayoutParams.WRAP_CONTENT
-                ).apply {
-                    setMargins(0, 0, 0, 12)
-                }
+                ).apply { setMargins(0, 0, 0, 12) }
                 layoutParams = params
             }
 
@@ -633,7 +796,7 @@ class MainActivity : Activity() {
 
             val judulBaris = if (plat.isNotEmpty()) "$kendaraan ($plat)" else kendaraan
             val tvItemTitle = TextView(this).apply {
-                text = "$judulBaris — Rp ${rupiahFormat.format(biaya)}"
+                text = "$judulBaris — Rp ${nf.format(biaya)}"
                 textSize = 15f
                 setTypeface(null, Typeface.BOLD)
                 setTextColor(Color.parseColor("#102A43"))
@@ -660,13 +823,6 @@ class MainActivity : Activity() {
             itemCard.addView(btnHapusItem)
             containerRiwayat.addView(itemCard)
         }
-
-        tvRingkasanLaporan.text =
-            "TOTAL PENDAPATAN: Rp ${rupiahFormat.format(totalSemua)}\n" +
-            "Total Kendaraan: ${jsonArray.length()} unit\n\n" +
-            "• Motor : $countMotor unit (Rp ${rupiahFormat.format(totalMotor)})\n" +
-            "• Mobil : $countMobil unit (Rp ${rupiahFormat.format(totalMobil)})\n" +
-            "• Truk  : $countTruk unit (Rp ${rupiahFormat.format(totalTruk)})"
     }
 
     private fun hapusSatuTransaksi(targetId: Long) {
@@ -682,86 +838,114 @@ class MainActivity : Activity() {
         }
         prefs.edit().putString(KEY_DATA, baru.toString()).apply()
         muatDataLaporan()
-        Toast.makeText(this, "Transaksi dihapus", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, "Karcis dihapus dari laporan", Toast.LENGTH_SHORT).show()
     }
 
     private fun konfirmasiHapusSemua() {
         AlertDialog.Builder(this)
             .setTitle("Hapus Semua Laporan?")
-            .setMessage("Semua catatan transaksi parkir yang tersimpan akan dihapus permanen.")
+            .setMessage("Semua data rekap dan karcis tersimpan akan dihapus permanen.")
             .setPositiveButton("Hapus") { _, _ ->
                 getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
                     .edit()
                     .putString(KEY_DATA, "[]")
                     .apply()
+                etUangFisik.setText("")
                 muatDataLaporan()
-                Toast.makeText(this, "Semua laporan telah dibersihkan", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Laporan dibersihkan", Toast.LENGTH_SHORT).show()
             }
             .setNegativeButton("Batal", null)
             .show()
     }
 
-    private fun bagikanAtauSalinLaporan() {
+    private fun bagikanAtauSalinTeks() {
         val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
         val jsonArray = JSONArray(prefs.getString(KEY_DATA, "[]"))
         if (jsonArray.length() == 0) {
-            Toast.makeText(this, "Belum ada data laporan untuk dikirim", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Belum ada data laporan", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val rupiahFormat = NumberFormat.getNumberInstance(Locale("in", "ID"))
-        var totalSemua = 0
-        var countMotor = 0; var totalMotor = 0
-        var countMobil = 0; var totalMobil = 0
-        var countTruk = 0; var totalTruk = 0
-
-        val detailBuilder = StringBuilder()
-        for (i in 0 until jsonArray.length()) {
-            val obj = jsonArray.getJSONObject(i)
-            val kendaraan = obj.getString("kendaraan")
-            val jMasuk = obj.getString("jam_masuk")
-            val jKeluar = obj.getString("jam_keluar")
-            val biaya = obj.getInt("biaya")
-            val plat = obj.optString("plat", "")
-
-            totalSemua += biaya
-            when (kendaraan) {
-                "Motor" -> { countMotor++; totalMotor += biaya }
-                "Mobil" -> { countMobil++; totalMobil += biaya }
-                "Truk" -> { countTruk++; totalTruk += biaya }
-            }
-
-            val labelPlat = if (plat.isNotEmpty()) " [$plat]" else ""
-            detailBuilder.append("${i + 1}. $kendaraan$labelPlat ($jMasuk-$jKeluar): Rp ${rupiahFormat.format(biaya)}\n")
-        }
-
-        val tglCetak = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date())
-        val teksLaporan = """
-            *LAPORAN PARKIR - DS CALC*
-            Dicetak: $tglCetak
-            
-            *RINGKASAN:*
-            • Motor: $countMotor unit = Rp ${rupiahFormat.format(totalMotor)}
-            • Mobil: $countMobil unit = Rp ${rupiahFormat.format(totalMobil)}
-            • Truk: $countTruk unit = Rp ${rupiahFormat.format(totalTruk)}
-            *TOTAL (${jsonArray.length()} unit): Rp ${rupiahFormat.format(totalSemua)}*
-            
-            *RINCIAN TRANSAKSI:*
-            $detailBuilder
-        """.trimIndent()
-
-        // Salin otomatis ke clipboard
+        val teks = susunTeksRekap()
         val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        clipboard.setPrimaryClip(ClipData.newPlainText("Laporan Parkir", teksLaporan))
-        Toast.makeText(this, "Laporan disalin ke clipboard!", Toast.LENGTH_SHORT).show()
+        clipboard.setPrimaryClip(ClipData.newPlainText("Rekap Parkir", teks))
+        Toast.makeText(this, "Teks rekap disalin!", Toast.LENGTH_SHORT).show()
 
-        // Buka menu Share Android (bisa langsung kirim ke WhatsApp)
         val sendIntent = Intent().apply {
             action = Intent.ACTION_SEND
-            putExtra(Intent.EXTRA_TEXT, teksLaporan)
+            putExtra(Intent.EXTRA_TEXT, teks)
             type = "text/plain"
         }
-        startActivity(Intent.createChooser(sendIntent, "Kirim Laporan Parkir via"))
+        startActivity(Intent.createChooser(sendIntent, "Kirim Teks Laporan via"))
+    }
+
+    private fun kirimLaporanGambarJpg() {
+        val prefs = getSharedPreferences(PREF_NAME, Context.MODE_PRIVATE)
+        val jsonArray = JSONArray(prefs.getString(KEY_DATA, "[]"))
+        if (jsonArray.length() == 0) {
+            Toast.makeText(this, "Belum ada data laporan untuk dijadikan gambar", Toast.LENGTH_SHORT).show()
+            return
+        }
+
+        val teks = susunTeksRekap()
+        val barisList = teks.split("\n")
+
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.parseColor("#102A43")
+            textSize = 34f
+            typeface = Typeface.MONOSPACE
+        }
+
+        val padding = 60
+        val lineHeight = 48
+        val width = 1080
+        val height = (barisList.size * lineHeight) + (padding * 2) + 40
+
+        val bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+
+        // Latar belakang putih bersih seperti kertas struk
+        canvas.drawColor(Color.WHITE)
+
+        // Bingkai tepi tipis
+        val borderPaint = Paint().apply {
+            color = Color.parseColor("#BCCCDC")
+            style = Paint.Style.STROKE
+            strokeWidth = 4f
+        }
+        canvas.drawRect(24f, 24f, (width - 24).toFloat(), (height - 24).toFloat(), borderPaint)
+
+        var yPos = padding + 36f
+        for ((index, baris) in barisList.withIndex()) {
+            if (index == 0 || baris.startsWith("Total") || baris.startsWith("Uang Fisik") || baris.startsWith("Grand Total")) {
+                paint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            } else {
+                paint.typeface = Typeface.MONOSPACE
+            }
+            canvas.drawText(baris, padding.toFloat(), yPos, paint)
+            yPos += lineHeight
+        }
+
+        try {
+            val cacheFolder = File(cacheDir, "laporan_images")
+            if (!cacheFolder.exists()) cacheFolder.mkdirs()
+
+            val fileJpg = File(cacheFolder, "Rekap_Parkir_DsCalc.jpg")
+            FileOutputStream(fileJpg).use { out ->
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
+            }
+
+            val uri = FileProvider.getUriForFile(this, "com.ds.calc.fileprovider", fileJpg)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = "image/jpeg"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_TEXT, "Rekap Laporan Parkir - Ds Calc")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            startActivity(Intent.createChooser(shareIntent, "Kirim Gambar Laporan (JPG) ke WA"))
+        } catch (e: Exception) {
+            Toast.makeText(this, "Gagal membuat gambar: ${e.message}", Toast.LENGTH_LONG).show()
+        }
     }
 
     data class TarifParkir(
